@@ -15,7 +15,7 @@ this.socket.connect("tcp://<IP_DEL_SERVIDOR_CENTRAL>:5555");
 ```
 ### Usuario.java
 ```java
-this.socket.connect("tcp://192.168.10.24:5555");
+this.socket.connect("tcp://<IP_DEL_SERVIDOR_CENTRAL>:5555");
 ```
 ## Ejecucion
 
