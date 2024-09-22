@@ -33,5 +33,10 @@ mvn exec:java -Dexec.mainClass=com.example.Taxi -Dexec.args="2 1000 1000 1 1 4 3
 mvn exec:java -Dexec.mainClass=com.example.Usuario -Dexec.args="1 0 0 5"
 mvn exec:java -Dexec.mainClass=com.example.Usuario -Dexec.args="2 1 1 10"
 ```
+# En la segunda maquina compilar el proyecto y ejecutar:
+```java
+mvn exec:java -Dexec.mainClass="com.example.ServidorCentral"
+```
+
 
 
