@@ -44,8 +44,8 @@ public class Taxi {
                         posicion[0]--;
                     }
                     socket.send(gson.toJson(new Mensaje("actualizacion", taxiId, posicion)));
-                    socket.recvStr();
                     System.out.println("Taxi ID=" + taxiId + " se movió a la posición " + posicion[0] + "," + posicion[1]);
+                    socket.recvStr();
                 }
                 Thread.sleep(30000 / velocidad);
             }
@@ -70,8 +70,18 @@ public class Taxi {
     }
 
     public static void main(String[] args) {
-        int[] posicionInicial = {0, 0};
-        Taxi taxi = new Taxi(1, 1000, 1000, posicionInicial, 4, 3);
+        if (args.length < 7) {
+            System.out.println("Uso: Taxi <taxiId> <n> <m> <posX> <posY> <velocidad> <serviciosDiarios>");
+            return;
+        }
+        int taxiId = Integer.parseInt(args[0]);
+        int n = Integer.parseInt(args[1]);
+        int m = Integer.parseInt(args[2]);
+        int[] posicionInicial = {Integer.parseInt(args[3]), Integer.parseInt(args[4])};
+        int velocidad = Integer.parseInt(args[5]);
+        int serviciosDiarios = Integer.parseInt(args[6]);
+
+        Taxi taxi = new Taxi(taxiId, n, m, posicionInicial, velocidad, serviciosDiarios);
         taxi.run();
     }
 }

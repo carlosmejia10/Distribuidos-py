@@ -26,7 +26,9 @@ public class Usuario extends Thread {
     public void run() {
         try {
             Thread.sleep(tiempoEspera * 1000);
-            socket.send(gson.toJson(new Mensaje("solicitud", usuarioId, posicion)));
+            Mensaje solicitud = new Mensaje("solicitud", usuarioId, posicion);
+            socket.send(gson.toJson(solicitud));
+            System.out.println("Solicitud enviada por usuario ID=" + usuarioId);
             String respuesta = socket.recvStr();
             Respuesta resp = gson.fromJson(respuesta, Respuesta.class);
             if (resp.status.equals("ok")) {
@@ -43,8 +45,15 @@ public class Usuario extends Thread {
     }
 
     public static void main(String[] args) {
-        int[] posicion = {0, 0};
-        Usuario usuario = new Usuario(1, posicion, 5);
+        if (args.length < 3) {
+            System.out.println("Uso: Usuario <usuarioId> <posX> <posY> <tiempoEspera>");
+            return;
+        }
+        int usuarioId = Integer.parseInt(args[0]);
+        int[] posicion = {Integer.parseInt(args[1]), Integer.parseInt(args[2])};
+        int tiempoEspera = Integer.parseInt(args[3]);
+
+        Usuario usuario = new Usuario(usuarioId, posicion, tiempoEspera);
         usuario.start();
     }
 }
