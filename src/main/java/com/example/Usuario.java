@@ -20,7 +20,7 @@ public class Usuario extends Thread {
         this.context = new ZContext();
         this.socket = context.createSocket(ZMQ.DEALER);
         this.socket.setIdentity(String.valueOf(usuarioId).getBytes(ZMQ.CHARSET));
-        this.socket.connect("tcp://192.168.0.6:5555");
+        this.socket.connect("tcp://192.168.0.10:5555");
         this.gson = new Gson();
     }
 

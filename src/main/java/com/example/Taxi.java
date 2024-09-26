@@ -28,7 +28,7 @@ public class Taxi {
         this.context = new ZContext();
         this.socket = context.createSocket(ZMQ.DEALER);
         this.socket.setIdentity(String.valueOf(taxiId).getBytes(ZMQ.CHARSET));
-        boolean connected = this.socket.connect("tcp://192.168.0.6:5555");
+        boolean connected = this.socket.connect("tcp://192.168.0.10:5555");
         System.out.println("Socket connected: " + connected);
         this.gson = new Gson();
     }
