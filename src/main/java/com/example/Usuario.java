@@ -1,7 +1,8 @@
 package com.example;
 
-import org.zeromq.ZMQ;
 import org.zeromq.ZContext;
+import org.zeromq.ZMQ;
+
 import com.google.gson.Gson;
 
 public class Usuario extends Thread {
@@ -17,8 +18,9 @@ public class Usuario extends Thread {
         this.posicion = posicion;
         this.tiempoEspera = tiempoEspera;
         this.context = new ZContext();
-        this.socket = context.createSocket(ZMQ.REQ);
-        this.socket.connect("tcp://192.168.10.24:5555");
+        this.socket = context.createSocket(ZMQ.DEALER);
+        this.socket.setIdentity(String.valueOf(usuarioId).getBytes(ZMQ.CHARSET));
+        this.socket.connect("tcp://192.168.0.6:5555");
         this.gson = new Gson();
     }
 
@@ -27,9 +29,14 @@ public class Usuario extends Thread {
         try {
             Thread.sleep(tiempoEspera * 1000);
             Mensaje solicitud = new Mensaje("solicitud", usuarioId, posicion);
-            socket.send(gson.toJson(solicitud));
-            System.out.println("Solicitud enviada por usuario ID=" + usuarioId);
-            String respuesta = socket.recvStr();
+            String mensajeJson = gson.toJson(solicitud);
+            socket.send(mensajeJson);
+            System.out.println("Usuario ID=" + usuarioId + " enviando solicitud: " + mensajeJson);
+
+            byte[] reply = socket.recv(0);
+            String respuesta = new String(reply, ZMQ.CHARSET);
+            System.out.println("Usuario ID=" + usuarioId + " recibió respuesta: " + respuesta);
+
             Respuesta resp = gson.fromJson(respuesta, Respuesta.class);
             if (resp.status.equals("ok")) {
                 System.out.println("Usuario " + usuarioId + " asignado al taxi " + resp.taxiId);
@@ -38,6 +45,9 @@ public class Usuario extends Thread {
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            System.out.println("Error en Usuario ID=" + usuarioId + ": " + e.getMessage());
+            e.printStackTrace();
         } finally {
             socket.close();
             context.close();
@@ -45,7 +55,7 @@ public class Usuario extends Thread {
     }
 
     public static void main(String[] args) {
-        if (args.length < 3) {
+        if (args.length < 4) {
             System.out.println("Uso: Usuario <usuarioId> <posX> <posY> <tiempoEspera>");
             return;
         }

@@ -1,11 +1,14 @@
 package com.example;
 
-import org.zeromq.ZMQ;
-import org.zeromq.ZContext;
-import com.google.gson.Gson;
 import java.util.Random;
 
+import org.zeromq.ZContext;
+import org.zeromq.ZMQ;
+
+import com.google.gson.Gson;
+
 public class Taxi {
+
     private int taxiId;
     private int n, m;
     private int[] posicion;
@@ -23,8 +26,10 @@ public class Taxi {
         this.velocidad = velocidad;
         this.serviciosDiarios = serviciosDiarios;
         this.context = new ZContext();
-        this.socket = context.createSocket(ZMQ.REQ);
-        this.socket.connect("tcp://192.168.10.24:5555");
+        this.socket = context.createSocket(ZMQ.DEALER);
+        this.socket.setIdentity(String.valueOf(taxiId).getBytes(ZMQ.CHARSET));
+        boolean connected = this.socket.connect("tcp://192.168.0.6:5555");
+        System.out.println("Socket connected: " + connected);
         this.gson = new Gson();
     }
 
@@ -43,9 +48,13 @@ public class Taxi {
                     } else if (direccion.equals("O") && posicion[0] > 0) {
                         posicion[0]--;
                     }
-                    socket.send(gson.toJson(new Mensaje("actualizacion", taxiId, posicion)));
+                    Mensaje mensajeActualizacion = new Mensaje("actualizacion", taxiId, posicion);
+                    String mensajeJson = gson.toJson(mensajeActualizacion);
+                    socket.send(mensajeJson);
                     System.out.println("Taxi ID=" + taxiId + " se movió a la posición " + posicion[0] + "," + posicion[1]);
-                    socket.recvStr();
+                    System.out.println("Mensaje enviado: " + mensajeJson);
+                    String respuesta = socket.recvStr();
+                    System.out.println("Respuesta recibida: " + respuesta);
                 }
                 Thread.sleep(30000 / velocidad);
             }
@@ -59,10 +68,27 @@ public class Taxi {
 
     public void run() {
         try {
-            socket.send(gson.toJson(new Mensaje("registro", taxiId, posicion)));
-            socket.recvStr();
-            System.out.println("Taxi ID=" + taxiId + " registrado en la posición " + posicion[0] + "," + posicion[1]);
-            mover();
+            System.out.println("Taxi ID=" + taxiId + " intentando conectar a 192.168.0.6:5555");
+            Mensaje mensajeRegistro = new Mensaje("registro", taxiId, posicion);
+            String mensajeJson = gson.toJson(mensajeRegistro);
+            socket.send(mensajeJson);
+            System.out.println("Taxi ID=" + taxiId + " enviando mensaje de registro desde la posición " + posicion[0] + "," + posicion[1]);
+            System.out.println("Mensaje de registro enviado: " + mensajeJson);
+
+            // Esperar respuesta
+            byte[] reply = socket.recv(0);  // 0 significa que esperará indefinidamente
+            String respuesta = new String(reply, ZMQ.CHARSET);
+            
+            System.out.println("Respuesta recibida: " + respuesta);
+            if (respuesta.equals("ok")) {
+                System.out.println("Taxi ID=" + taxiId + " registrado exitosamente en la posición " + posicion[0] + "," + posicion[1]);
+                mover();
+            } else {
+                System.out.println("Error al registrar el Taxi ID=" + taxiId + ": " + respuesta);
+            }
+        } catch (Exception e) {
+            System.out.println("Error en Taxi ID=" + taxiId + ": " + e.getMessage());
+            e.printStackTrace();
         } finally {
             socket.close();
             context.close();
