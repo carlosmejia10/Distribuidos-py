@@ -21,7 +21,7 @@ public class ServidorCentral {
     public ServidorCentral() {
         this.context = new ZContext();
         this.socket = context.createSocket(ZMQ.ROUTER);
-        boolean bound = this.socket.bind("tcp://0.0.0.0:5555");  // Cambiado a "*" para escuchar en todas las interfaces
+        boolean bound = this.socket.bind("tcp://0.0.0.0:5555");
         System.out.println("Socket bound: " + bound);
         this.gson = new Gson();
     }
@@ -34,7 +34,6 @@ public class ServidorCentral {
                 String identity = socket.recvStr();
                 System.out.println("Identidad recibida: " + identity);
                 
-                // El Taxi está usando DEALER, por lo que no enviará un frame vacío
                 String mensaje = socket.recvStr();
                 System.out.println("Mensaje recibido de " + identity + ": " + mensaje);
 
@@ -47,14 +46,12 @@ public class ServidorCentral {
                     Mensaje msg = gson.fromJson(mensaje, Mensaje.class);
                     if (msg == null) {
                         System.out.println("No se pudo parsear el mensaje JSON de " + identity + ". Mensaje: " + mensaje);
-                        enviarRespuesta(identity, "Error: Mensaje no válido");
                     } else {
                         procesarMensaje(identity, msg);
                     }
                 } catch (JsonSyntaxException e) {
                     System.out.println("Error al procesar el mensaje JSON de " + identity + ": " + e.getMessage());
                     System.out.println("Mensaje recibido (no JSON): " + mensaje);
-                    enviarRespuesta(identity, "Error: Mensaje no válido");
                 }
             } catch (Exception e) {
                 System.out.println("Error inesperado en el Servidor Central: " + e.getMessage());
@@ -66,46 +63,38 @@ public class ServidorCentral {
     private void procesarMensaje(String identity, Mensaje msg) {
         if (msg == null || msg.tipo == null) {
             System.out.println("Mensaje nulo o sin tipo recibido de " + identity);
-            enviarRespuesta(identity, "Error: Mensaje inválido");
             return;
         }
-
         System.out.println("Procesando mensaje de tipo: " + msg.tipo + " de " + identity);
-
         switch (msg.tipo) {
             case "registro":
                 taxis.put(msg.id, new TaxiInfo(msg.posicion, true, identity));
                 System.out.println("Nuevo taxi registrado - ID=" + msg.id + " en la posición " + msg.posicion[0] + "," + msg.posicion[1]);
-                enviarRespuesta(identity, "ok");
+                enviarRespuestaOk(identity);
                 break;
             case "solicitud":
                 System.out.println("Nueva solicitud de servicio - Usuario ID=" + msg.id + " en la posición " + msg.posicion[0] + "," + msg.posicion[1]);
                 Respuesta respuesta = asignarTaxi(msg);
-                enviarRespuesta(identity, gson.toJson(respuesta));
                 if (respuesta.status.equals("ok")) {
-                    System.out.println("Taxi ID=" + respuesta.taxiId + " asignado al Usuario ID=" + msg.id);
                     TaxiInfo taxi = taxis.get(respuesta.taxiId);
-                    enviarRespuesta(taxi.getIdentity(), gson.toJson(new Mensaje("servicio", respuesta.taxiId, msg.posicion)));
-                    System.out.println("Notificación enviada al Taxi ID=" + respuesta.taxiId + " para recoger al Usuario ID=" + msg.id);
+                    enviarAsignacion(taxi.getIdentity(), msg, identity);
                 } else {
                     System.out.println("No se pudo asignar un taxi al Usuario ID=" + msg.id);
                 }
                 break;
             case "actualizacion":
                 actualizarPosicionTaxi(msg);
-                enviarRespuesta(identity, "ok");
                 break;
             default:
                 System.out.println("Mensaje de tipo desconocido: " + msg.tipo);
-                enviarRespuesta(identity, "Tipo de mensaje desconocido");
                 break;
         }
     }
 
-    private void enviarRespuesta(String identity, String respuesta) {
+    private void enviarRespuestaOk(String identity) {
         socket.sendMore(identity);
-        socket.send(respuesta);  // Eliminamos el frame vacío y ZMQ.DONTWAIT
-        System.out.println("Respuesta enviada a " + identity + ": " + respuesta);
+        socket.send("ok");
+        System.out.println("Respuesta 'ok' enviada a " + identity);
     }
 
     private Respuesta asignarTaxi(Mensaje msg) {
@@ -113,7 +102,6 @@ public class ServidorCentral {
         int usuarioY = msg.posicion[1];
         int taxiIdAsignado = -1;
         double distanciaMinima = Double.MAX_VALUE;
-
         for (Map.Entry<Integer, TaxiInfo> entry : taxis.entrySet()) {
             TaxiInfo taxi = entry.getValue();
             if (taxi.isDisponible()) {
@@ -126,7 +114,6 @@ public class ServidorCentral {
                 }
             }
         }
-
         if (taxiIdAsignado != -1) {
             taxis.get(taxiIdAsignado).setDisponible(false);
             String info = "Servicio asignado: Taxi ID=" + taxiIdAsignado + " a Usuario ID=" + msg.id;
@@ -139,6 +126,23 @@ public class ServidorCentral {
             System.out.println(info);
             return new Respuesta("no disponible", -1);
         }
+    }
+
+    private void enviarAsignacion(String taxiIdentity, Mensaje msg, String usuarioIdentity) {
+        Mensaje asignacion = new Mensaje("servicio", msg.id, msg.posicion);
+        String mensajeJson = gson.toJson(asignacion);
+
+        // Enviar asignación al taxi
+        socket.sendMore(taxiIdentity);
+        socket.send(mensajeJson);
+        System.out.println("Asignación enviada al taxi " + taxiIdentity + ": " + mensajeJson);
+
+        // Enviar asignación al usuario
+        Respuesta respuesta = new Respuesta("ok", msg.id);
+        String respuestaJson = gson.toJson(respuesta);
+        socket.sendMore(usuarioIdentity);
+        socket.send(respuestaJson);
+        System.out.println("Asignación enviada al usuario " + usuarioIdentity + ": " + taxiIdentity);
     }
 
     private void actualizarPosicionTaxi(Mensaje msg) {

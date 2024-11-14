@@ -1,19 +1,19 @@
 package com.example;
 
-import java.util.Random;
-
 import org.zeromq.ZContext;
 import org.zeromq.ZMQ;
 
 import com.google.gson.Gson;
 
-public class Taxi {
-
+public class Taxi extends Thread {
     private int taxiId;
-    private int n, m;
+    private int n;
+    private int m;
     private int[] posicion;
+    private int[] posicionInicial;
     private int velocidad;
     private int serviciosDiarios;
+    private int serviciosRealizados;
     private ZContext context;
     private ZMQ.Socket socket;
     private Gson gson;
@@ -22,67 +22,54 @@ public class Taxi {
         this.taxiId = taxiId;
         this.n = n;
         this.m = m;
-        this.posicion = posicionInicial;
+        this.posicion = posicionInicial.clone();
+        this.posicionInicial = posicionInicial.clone();
         this.velocidad = velocidad;
         this.serviciosDiarios = serviciosDiarios;
+        this.serviciosRealizados = 0;
         this.context = new ZContext();
         this.socket = context.createSocket(ZMQ.DEALER);
         this.socket.setIdentity(String.valueOf(taxiId).getBytes(ZMQ.CHARSET));
-        boolean connected = this.socket.connect("tcp://192.168.0.10:5555");
-        System.out.println("Socket connected: " + connected);
+        this.socket.connect("tcp://servidor-central:5555");
         this.gson = new Gson();
     }
 
-    private void mover() {
-        Random random = new Random();
-        try {
-            while (serviciosDiarios > 0 && !Thread.currentThread().isInterrupted()) {
-                if (velocidad > 0) {
-                    String direccion = random.nextBoolean() ? "N" : "S";
-                    if (direccion.equals("N") && posicion[1] > 0) {
-                        posicion[1]--;
-                    } else if (direccion.equals("S") && posicion[1] < m - 1) {
-                        posicion[1]++;
-                    } else if (direccion.equals("E") && posicion[0] < n - 1) {
-                        posicion[0]++;
-                    } else if (direccion.equals("O") && posicion[0] > 0) {
-                        posicion[0]--;
-                    }
-                    Mensaje mensajeActualizacion = new Mensaje("actualizacion", taxiId, posicion);
-                    String mensajeJson = gson.toJson(mensajeActualizacion);
-                    socket.send(mensajeJson);
-                    System.out.println("Taxi ID=" + taxiId + " se movió a la posición " + posicion[0] + "," + posicion[1]);
-                    System.out.println("Mensaje enviado: " + mensajeJson);
-                    String respuesta = socket.recvStr();
-                    System.out.println("Respuesta recibida: " + respuesta);
-                }
-                Thread.sleep(30000 / velocidad);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        } finally {
-            socket.close();
-            context.close();
-        }
-    }
-
+    @Override
     public void run() {
         try {
-            System.out.println("Taxi ID=" + taxiId + " intentando conectar a 192.168.0.6:5555");
-            Mensaje mensajeRegistro = new Mensaje("registro", taxiId, posicion);
-            String mensajeJson = gson.toJson(mensajeRegistro);
+            // Registrar el taxi en el servidor central
+            Mensaje registro = new Mensaje("registro", taxiId, posicion);
+            String mensajeJson = gson.toJson(registro);
             socket.send(mensajeJson);
-            System.out.println("Taxi ID=" + taxiId + " enviando mensaje de registro desde la posición " + posicion[0] + "," + posicion[1]);
-            System.out.println("Mensaje de registro enviado: " + mensajeJson);
+            System.out.println("Taxi ID=" + taxiId + " enviando registro: " + mensajeJson);
 
-            // Esperar respuesta
-            byte[] reply = socket.recv(0);  // 0 significa que esperará indefinidamente
+            // Esperar respuesta de registro
+            byte[] reply = socket.recv(0);
             String respuesta = new String(reply, ZMQ.CHARSET);
-            
             System.out.println("Respuesta recibida: " + respuesta);
+
             if (respuesta.equals("ok")) {
                 System.out.println("Taxi ID=" + taxiId + " registrado exitosamente en la posición " + posicion[0] + "," + posicion[1]);
-                mover();
+
+                // Bucle principal para esperar mensajes del servidor y enviar la posición periódicamente
+                while (serviciosRealizados < serviciosDiarios) {
+                    // Enviar la posición actual al servidor
+                    actualizarPosicion();
+
+                    // Esperar mensaje del servidor con un timeout
+                    String mensaje = socket.recvStr(ZMQ.DONTWAIT);
+                    if (mensaje != null) {
+                        System.out.println("Mensaje recibido: " + mensaje);
+                        Mensaje msg = gson.fromJson(mensaje, Mensaje.class);
+                        if (msg.tipo.equals("servicio")) {
+                            realizarServicio();
+                        }
+                    }
+
+                    // Esperar un tiempo antes de enviar la próxima actualización de posición
+                    Thread.sleep(velocidad * 1000);
+                }
+                System.out.println("Taxi ID=" + taxiId + " ha completado todos los servicios del día.");
             } else {
                 System.out.println("Error al registrar el Taxi ID=" + taxiId + ": " + respuesta);
             }
@@ -92,6 +79,45 @@ public class Taxi {
         } finally {
             socket.close();
             context.close();
+        }
+    }
+
+    private void actualizarPosicion() {
+        // Actualizar la posición del taxi (ejemplo simple: mover en una dirección aleatoria)
+        posicion[0] = (posicion[0] + 1) % n;
+        posicion[1] = (posicion[1] + 1) % m;
+
+        // Enviar la nueva posición al servidor central
+        Mensaje actualizacion = new Mensaje("actualizacion", taxiId, posicion);
+        String mensajeJson = gson.toJson(actualizacion);
+        socket.send(mensajeJson, 0);  // Enviar sin esperar respuesta
+        System.out.println("Taxi ID=" + taxiId + " nueva posición: " + mensajeJson);
+    }
+
+    public void realizarServicio() {
+        try {
+            // Desaparecer de la matriz por 30 segundos
+            System.out.println("Taxi ID=" + taxiId + " realizando servicio. Desapareciendo por 30 segundos.");
+            Thread.sleep(30000);
+
+            // Incrementar el contador de servicios realizados
+            serviciosRealizados++;
+
+            if (serviciosRealizados < serviciosDiarios) {
+                // Volver a la posición inicial
+                posicion = posicionInicial.clone();
+                Mensaje actualizacion = new Mensaje("actualizacion", taxiId, posicion);
+                String mensajeJson = gson.toJson(actualizacion);
+                socket.send(mensajeJson, 0);  // Enviar sin esperar respuesta
+                System.out.println("Taxi ID=" + taxiId + " volvió a la posición inicial: " + mensajeJson);
+            } else {
+                System.out.println("Taxi ID=" + taxiId + " ha completado todos los servicios del día.");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Exception e) {
+            System.out.println("Error en Taxi ID=" + taxiId + " durante el servicio: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -108,6 +134,6 @@ public class Taxi {
         int serviciosDiarios = Integer.parseInt(args[6]);
 
         Taxi taxi = new Taxi(taxiId, n, m, posicionInicial, velocidad, serviciosDiarios);
-        taxi.run();
+        taxi.start();
     }
 }

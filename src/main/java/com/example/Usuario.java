@@ -20,14 +20,16 @@ public class Usuario extends Thread {
         this.context = new ZContext();
         this.socket = context.createSocket(ZMQ.DEALER);
         this.socket.setIdentity(String.valueOf(usuarioId).getBytes(ZMQ.CHARSET));
-        this.socket.connect("tcp://192.168.0.10:5555");
+        this.socket.connect("tcp://servidor-central:5555");
         this.gson = new Gson();
     }
 
     @Override
     public void run() {
         try {
+            // Esperar un tiempo antes de enviar la solicitud
             Thread.sleep(tiempoEspera * 1000);
+
             Mensaje solicitud = new Mensaje("solicitud", usuarioId, posicion);
             String mensajeJson = gson.toJson(solicitud);
             socket.send(mensajeJson);
